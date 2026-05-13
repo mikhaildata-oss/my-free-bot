@@ -1,6 +1,6 @@
 import os
-from ..domain.ports import IMessageRepository
-from ..domain.entities import Message
+from domain.ports import IMessageRepository
+from domain.entities import Message
 
 class SupabaseMessageRepository(IMessageRepository):
     """

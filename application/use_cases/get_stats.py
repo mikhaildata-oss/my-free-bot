@@ -1,4 +1,4 @@
-from ...domain.ports import IMessageRepository
+from domain.ports import IMessageRepository
 from typing import Dict
 
 class GetStatsUseCase:

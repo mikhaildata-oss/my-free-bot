@@ -1,6 +1,6 @@
 import os
 from groq import AsyncGroq
-from ..domain.ports import IAIProvider
+from domain.ports import IAIProvider
 
 class GroqAIAdapter(IAIProvider):
     def __init__(self):

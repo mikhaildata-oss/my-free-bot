@@ -1,6 +1,6 @@
-from .use_cases.process_message import ProcessMessageUseCase
-from .use_cases.get_stats import GetStatsUseCase
-from ..domain.ports import IAIProvider, IMessageRepository
+from application.use_cases.process_message import ProcessMessageUseCase
+from application.use_cases.get_stats import GetStatsUseCase
+from domain.ports import IAIProvider, IMessageRepository
 
 class ApplicationServices:
     """Фасад для всех use cases"""

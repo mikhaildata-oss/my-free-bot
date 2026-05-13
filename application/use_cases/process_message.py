@@ -1,6 +1,5 @@
-from ...domain.ports import IAIProvider, IMessageRepository
-from ...domain.entities import Message
-
+from domain.ports import IAIProvider, IMessageRepository
+from domain.entities import Message
 class ProcessMessageUseCase:
     def __init__(self, ai: IAIProvider, repo: IMessageRepository):
         self.ai = ai

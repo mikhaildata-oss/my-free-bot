@@ -2,8 +2,8 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from . import keyboards
-from ...application.services import ApplicationServices
-from ...domain.entities import User, Message
+from application.services import ApplicationServices
+from domain.entities import User, Message
 
 router = Router()
 
