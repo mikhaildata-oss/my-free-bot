@@ -4,7 +4,8 @@ import sys
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
@@ -31,7 +32,7 @@ from adapters.telegram.handlers import register_handlers
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.info("🚀 Bootstrapping bot with Clean Architecture...")
+    logging.info(" Bootstrapping bot with Clean Architecture...")
     yield
     await bot.session.close()
     logging.info("🛑 Bot stopped")
@@ -60,8 +61,13 @@ async def webhook(request: Request):
     return {"ok": True}
 
 @app.get("/health")
+@app.head("/health")  # ← ЯВНЫЙ HEAD для UptimeRobot
 async def health():
-    return {"status": "ok", "architecture": "Clean/Hexagonal"}
+    return JSONResponse({"status": "ok", "architecture": "Clean/Hexagonal"})
+
+@app.get("/")
+async def root():
+    return {"message": "Bot is running"}
 
 @app.on_event("startup")
 async def setup():
