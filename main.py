@@ -1,78 +1,51 @@
-﻿# coding: utf-8
-import os
-import sys
-import logging
-from pathlib import Path
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+﻿import uvicorn
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
-from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.storage.memory import MemoryStorage
-from dotenv import load_dotenv
+from loguru import logger
+from bootstrap import init_ai_adapter, init_message_repo
+from domain.ports import IAIAdapter, IMessageRepository
+from domain.entities import Message
 
-env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=env_path)
+app = FastAPI(title="My Free Bot", version="1.0")
+ai_adapter: IAIAdapter | None = None
+msg_repo: IMessageRepository | None = None
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    logging.error("❌ BOT_TOKEN not found!")
-    sys.exit(1)
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
-
-from infrastructure.groq_ai import GroqAIAdapter
-from infrastructure.supabase_db import SupabaseMessageRepository
-from application.services import ApplicationServices
-from adapters.telegram.handlers import register_handlers
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logging.info("🚀 Bootstrapping bot...")
-    yield
-    await bot.session.close()
-
-app = FastAPI(lifespan=lifespan)
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-
-ai_adapter = GroqAIAdapter()
-db_repository = SupabaseMessageRepository()
-services = ApplicationServices(ai=ai_adapter, repo=db_repository)
-
-register_handlers(dp, services)
+@app.on_event("startup")
+async def startup_event():
+    global ai_adapter, msg_repo
+    logger.info("Bootstrapping bot...")
+    ai_adapter = init_ai_adapter()
+    msg_repo = init_message_repo()
+    if ai_adapter: logger.success(f"AI Adapter ready: {ai_adapter.get_model_name()}")
+    if msg_repo: logger.success("Message Repository ready")
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    print("🔥🔥🔥 WEBHOOK_HIT 🔥🔥🔥", flush=True)  # ← САМЫЙ ВЕРХ
+    if not ai_adapter or not msg_repo:
+        raise HTTPException(status_code=500, detail="Dependencies not initialized")
     try:
         data = await request.json()
-        print(f"📦 Webhook data keys: {list(data.keys())}", flush=True)
-        if "message" in data:
-            print(f"💬 Message text: {data['message'].get('text')}", flush=True)
-        update = types.Update.model_validate(data, context={"bot": bot})
-        await dp.feed_webhook_update(bot, update)
-        print("✅ feed_webhook_update done", flush=True)
+        if "message" not in data or "text" not in data.get("message", {}):
+            return JSONResponse({"status": "ignored"})
+        msg_data = data["message"]
+        text = msg_data.get("text", "").strip()
+        if not text: return JSONResponse({"status": "ignored"})
+        user_id = msg_data.get("from", {}).get("id")
+        username = msg_data.get("from", {}).get("username", "unknown")
+        logger.info(f"WEBHOOK_HIT: User={user_id}, Text='{text[:30]}...'")
+        
+        # Сохраняем в БД
+        msg_id = await msg_repo.save(user_id=user_id, username=username, message_text=text)
+        
+        # Генерируем ответ
+        user_msg = Message(user_id=user_id, text=text, username=username)
+        response_text = await ai_adapter.generate_response(user_msg, history=[])
+        logger.info(f"AI Response: {response_text[:50]}...")
+        
+        return JSONResponse({"status": "ok", "msg_id": msg_id, "ai_response": response_text[:100]})
     except Exception as e:
-        print(f"❌ Webhook error: {e}", flush=True)
-    return {"ok": True}
-
-@app.get("/health")
-@app.head("/health")
-async def health():
-    return JSONResponse({"status": "ok", "architecture": "Clean/Hexagonal"})
-
-@app.get("/")
-async def root():
-    return {"message": "Bot is running"}
-
-@app.on_event("startup")
-async def setup():
-    webhook_url = os.getenv("WEBHOOK_URL")
-    if webhook_url:
-        await bot.set_webhook(webhook_url)
-    logging.info("✅ Webhook configured")
+        logger.error(f"Webhook error: {e}")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
