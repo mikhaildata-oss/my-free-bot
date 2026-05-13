@@ -1,8 +1,26 @@
-﻿import os, logging
+﻿# coding: utf-8
+import os
+import sys
+import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from aiogram import Bot, Dispatcher, types  # ← убедись, что types здесь есть
+from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
+from dotenv import load_dotenv
+
+# 🔥 Загружаем .env ВСЕГДА, с явным путём
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
+logging.info(f"✅ .env loaded from: {env_path.resolve()}")
+
+# Проверяем токен сразу
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    logging.error("❌ BOT_TOKEN not found! Check .env file")
+    sys.exit(1)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
 
 # Infrastructure
 from infrastructure.groq_ai import GroqAIAdapter
@@ -19,12 +37,12 @@ async def lifespan(app: FastAPI):
     logging.info("🛑 Bot stopped")
 
 app = FastAPI(lifespan=lifespan)
-bot = Bot(token=os.getenv("BOT_TOKEN"))
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 # === Dependency Injection ===
 ai_adapter = GroqAIAdapter()
-db_repository = SupabaseMessageRepository()  # пока заглушка
+db_repository = SupabaseMessageRepository()
 services = ApplicationServices(ai=ai_adapter, repo=db_repository)
 
 # === Middleware ===
@@ -47,10 +65,12 @@ async def health():
 
 @app.on_event("startup")
 async def setup():
-    if os.getenv("WEBHOOK_URL"):
-        await bot.set_webhook(os.getenv("WEBHOOK_URL"))
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if webhook_url:
+        await bot.set_webhook(webhook_url)
     logging.info("✅ Webhook configured")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
