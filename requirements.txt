@@ -5,3 +5,4 @@ loguru>=0.7.0
 httpx>=0.26.0
 supabase>=2.3.0
 aiogram>=3.3.0
+groq>=0.4.0
