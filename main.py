@@ -47,5 +47,13 @@ async def webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
+
+# Health check endpoint for Render
+@app.get("/health")
+async def health_check():
+    """Render health check: returns 200 if app is alive."""
+    return {"status": "healthy", "ai_adapter": ai_adapter.get_model_name() if ai_adapter else "not_initialized"}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
