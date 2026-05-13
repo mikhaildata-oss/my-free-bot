@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+# domain/entities.py
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
@@ -10,7 +11,10 @@ class User:
 
 @dataclass
 class Message:
-    id: str = str(uuid4())
+    # Сначала поля БЕЗ default (обязательные)
     user: User
     text: str
-    timestamp: datetime = datetime.utcnow()
+    
+    # Потом поля С default (опциональные)
+    id: str = field(default_factory=lambda: str(uuid4()))
+    timestamp: datetime = field(default_factory=datetime.utcnow)
