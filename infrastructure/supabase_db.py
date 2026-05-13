@@ -1,32 +1,36 @@
 import os
-import logging
+import traceback
 from typing import Optional
+from pathlib import Path
 from supabase import create_client, Client
-from domain.entities import Message, User
+from domain.entities import Message
 from domain.ports import IMessageRepository
 
-logger = logging.getLogger(__name__)
+# 🔥 Лог-файл для ВСЕХ ошибок
+ERROR_LOG = Path(__file__).parent.parent.parent / "save_errors.log"
 
 class SupabaseMessageRepository(IMessageRepository):
     def __init__(self):
-        self.url = os.getenv("SUPABASE_URL")
-        self.key = os.getenv("SUPABASE_KEY")
+        self.client = None
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
         self.table = os.getenv("SUPABASE_TABLE", "messages")
-        
-        if not self.url or not self.key:
-            logger.warning("⚠️ Supabase credentials not found, using mock repository")
-            self.client = None
-        else:
+        if url and key:
             try:
-                self.client: Client = create_client(self.url, self.key)
-                logger.info(f"✅ Supabase connected (table: {self.table})")
+                self.client = create_client(url, key)
+                with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                    f.write("✅ Supabase client created\n")
             except Exception as e:
-                logger.error(f"❌ Supabase connection failed: {e}")
-                self.client = None
+                with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                    f.write(f"❌ Client init failed: {e}\n{traceback.format_exc()}\n")
 
-    async def save_message(self, message: Message) -> Optional[str]:
+    async def save(self, message: Message) -> Optional[str]:
+        with open(ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"\n🔥 save() called: user={message.user.id}, text='{message.text[:30]}'\n")
+        
         if not self.client:
-            logger.warning("⚠️ Supabase not connected, message not saved")
+            with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                f.write("⚠️ No client\n")
             return None
         
         try:
@@ -36,29 +40,23 @@ class SupabaseMessageRepository(IMessageRepository):
                 "message_text": message.text,
                 "created_at": message.timestamp.isoformat()
             }
+            with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                f.write(f"🔄 Inserting: {data}\n")
+            
             result = self.client.table(self.table).insert(data).execute()
-            logger.info(f"💾 Message saved: {result.data[0]['id']}")
-            return result.data[0]['id']
+            msg_id = result.data[0]['id']
+            
+            with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                f.write(f"💚 SAVED: {msg_id}\n")
+            return msg_id
+            
         except Exception as e:
-            logger.error(f"❌ Failed to save message: {e}")
+            with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                f.write(f"❌ SAVE FAILED: {type(e).__name__}: {e}\n")
+                f.write(f"📋 TRACEBACK:\n{traceback.format_exc()}\n")
+                if hasattr(e, 'response') and e.response:
+                    f.write(f"🌐 Response: {e.response.text}\n")
             return None
 
-    async def get_total_count(self) -> int:
-        if not self.client:
-            return 0
-        try:
-            result = self.client.table(self.table).select("*", count="exact").execute()
-            return result.count
-        except Exception as e:
-            logger.error(f"❌ Failed to get count: {e}")
-            return 0
-
-    async def get_user_message_count(self, user_id: int) -> int:
-        if not self.client:
-            return 0
-        try:
-            result = self.client.table(self.table).select("*", count="exact").eq("user_id", user_id).execute()
-            return result.count
-        except Exception as e:
-            logger.error(f"❌ Failed to get user count: {e}")
-            return 0
+    async def get_total_count(self) -> int: return 0
+    async def get_user_message_count(self, user_id: int) -> int: return 0

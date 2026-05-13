@@ -4,64 +4,60 @@ import sys
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
-# 🔥 Загружаем .env ВСЕГДА, с явным путём
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
-logging.info(f"✅ .env loaded from: {env_path.resolve()}")
 
-# Проверяем токен сразу
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    logging.error("❌ BOT_TOKEN not found! Check .env file")
+    logging.error("❌ BOT_TOKEN not found!")
     sys.exit(1)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
 
-# Infrastructure
 from infrastructure.groq_ai import GroqAIAdapter
 from infrastructure.supabase_db import SupabaseMessageRepository
-from infrastructure.error_handler import ErrorHandlingMiddleware
 from application.services import ApplicationServices
 from adapters.telegram.handlers import register_handlers
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.info(" Bootstrapping bot with Clean Architecture...")
+    logging.info("🚀 Bootstrapping bot...")
     yield
     await bot.session.close()
-    logging.info("🛑 Bot stopped")
 
 app = FastAPI(lifespan=lifespan)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# === Dependency Injection ===
 ai_adapter = GroqAIAdapter()
 db_repository = SupabaseMessageRepository()
 services = ApplicationServices(ai=ai_adapter, repo=db_repository)
 
-# === Middleware ===
-dp.update.middleware(ErrorHandlingMiddleware())
-
-# === Handlers ===
 register_handlers(dp, services)
 
-# === Webhook ===
 @app.post("/webhook")
 async def webhook(request: Request):
-    data = await request.json()
-    update = types.Update.model_validate(data, context={"bot": bot})
-    await dp.feed_webhook_update(bot, update)
+    print("🔥🔥🔥 WEBHOOK_HIT 🔥🔥🔥", flush=True)  # ← САМЫЙ ВЕРХ
+    try:
+        data = await request.json()
+        print(f"📦 Webhook data keys: {list(data.keys())}", flush=True)
+        if "message" in data:
+            print(f"💬 Message text: {data['message'].get('text')}", flush=True)
+        update = types.Update.model_validate(data, context={"bot": bot})
+        await dp.feed_webhook_update(bot, update)
+        print("✅ feed_webhook_update done", flush=True)
+    except Exception as e:
+        print(f"❌ Webhook error: {e}", flush=True)
     return {"ok": True}
 
 @app.get("/health")
-@app.head("/health")  # ← ЯВНЫЙ HEAD для UptimeRobot
+@app.head("/health")
 async def health():
     return JSONResponse({"status": "ok", "architecture": "Clean/Hexagonal"})
 
