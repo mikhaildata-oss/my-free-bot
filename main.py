@@ -1,52 +1,39 @@
-﻿
-# coding: utf-8
-import os
-import logging
+﻿import os, logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, types  # ← убедись, что types здесь есть
 from aiogram.fsm.storage.memory import MemoryStorage
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+# Infrastructure
+from infrastructure.groq_ai import GroqAIAdapter
+from infrastructure.supabase_db import SupabaseMessageRepository
+from infrastructure.error_handler import ErrorHandlingMiddleware
+from application.services import ApplicationServices
+from adapters.telegram.handlers import register_handlers
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
-if not BOT_TOKEN:
-    raise ValueError("❌ Укажи BOT_TOKEN в переменных окружения Render")
-
-storage = MemoryStorage()
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=storage)
-
-# === Обработчики ===
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer("✅ <b>Бот работает на хостинге!</b>\nНапиши что-нибудь — я повторю.", parse_mode="HTML")
-
-@dp.message(Command("help"))
-async def cmd_help(message: types.Message):
-    await message.answer("📖 <b>Справка</b>:\n/start — перезапуск", parse_mode="HTML")
-
-@dp.message()
-async def echo(message: types.Message):
-    if message.text and not message.from_user.is_bot:
-        await message.answer(f"💬 <i>Эхо:</i> <code>{message.text}</code>", parse_mode="HTML")
-
-# === Lifespan (вместо устаревшего on_event) ===
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if WEBHOOK_URL:
-        await bot.set_webhook(WEBHOOK_URL)
-        logging.info(f"✅ Webhook: {WEBHOOK_URL}")
+    logging.info("🚀 Bootstrapping bot with Clean Architecture...")
     yield
     await bot.session.close()
-    if WEBHOOK_URL:
-        await bot.delete_webhook()
+    logging.info("🛑 Bot stopped")
 
 app = FastAPI(lifespan=lifespan)
+bot = Bot(token=os.getenv("BOT_TOKEN"))
+dp = Dispatcher(storage=MemoryStorage())
 
+# === Dependency Injection ===
+ai_adapter = GroqAIAdapter()
+db_repository = SupabaseMessageRepository()  # пока заглушка
+services = ApplicationServices(ai=ai_adapter, repo=db_repository)
+
+# === Middleware ===
+dp.update.middleware(ErrorHandlingMiddleware())
+
+# === Handlers ===
+register_handlers(dp, services)
+
+# === Webhook ===
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
@@ -56,4 +43,14 @@ async def webhook(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "architecture": "Clean/Hexagonal"}
+
+@app.on_event("startup")
+async def setup():
+    if os.getenv("WEBHOOK_URL"):
+        await bot.set_webhook(os.getenv("WEBHOOK_URL"))
+    logging.info("✅ Webhook configured")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
