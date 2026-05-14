@@ -4,7 +4,6 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from loguru import logger
 import httpx
-
 from bootstrap import init_ai_adapter, init_message_repo
 from domain.ports import IAIAdapter, IMessageRepository
 from domain.entities import Message
@@ -58,15 +57,15 @@ async def webhook(request: Request):
         chat_id = msg_data.get("chat", {}).get("id")
         logger.info(f"WEBHOOK: User={user_id}, Text='{text[:30]}...'")
         
-        msg_id = await msg_repo.save(user_id=user_id, username=username, message_text=text)
-        logger.info(f"SAVED: ID={msg_id}")
-        
         user_msg = Message(user_id=user_id, text=text, username=username)
         response_text = await ai_adapter.generate_response(user_msg, history=[])
         logger.info(f"AI: {response_text[:50]}...")
         
-        await send_telegram_message(chat_id, response_text)
+        # SAVE BOTH USER MSG AND AI RESPONSE
+        msg_id = await msg_repo.save(user_id=user_id, username=username, message_text=text, ai_response=response_text)
+        logger.info(f"SAVED: ID={msg_id}")
         
+        await send_telegram_message(chat_id, response_text)
         return JSONResponse({"status": "ok", "msg_id": msg_id})
     except Exception as e:
         logger.error(f"Webhook error: {e}")
