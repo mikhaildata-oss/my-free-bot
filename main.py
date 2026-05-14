@@ -23,7 +23,7 @@ async def startup_event():
     if msg_repo:
         logger.success("Message Repository ready")
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     return {"status": "healthy", "ai": ai_adapter.get_model_name() if ai_adapter else "init"}
 
@@ -73,3 +73,4 @@ async def webhook(request: Request):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+
